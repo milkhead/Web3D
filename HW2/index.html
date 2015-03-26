@@ -1,0 +1,163 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+	#info {
+    position: absolute;
+    top: 0px;
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    color: #ff0000
+}
+a {
+    color: #ffff00
+}
+}
+</style>
+</head>
+
+<body>
+<div id="info">demo page
+    <br/> <a href="javascript:Toggle();">toggle </a>
+
+</div>
+<audio id="close" style="display:none">
+<source src="sounds/close.wav" type='audio/wav'>
+</audio>
+<audio id="open" style="display:none">
+<source src="sounds/open.wav" type='audio/wav'>
+</audio>
+<script src="js/three.min.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/KeyboardState.js"></script>
+
+<script>
+var closeSound, openSound;
+var camera, scene, renderer, geometry, material, material2,geometry2, geometry3, mesh, mesh2, mesh3, mesh4, meshdoor, light, controls;
+var geometry4, mesh5, geometry5, mesh6, geometry6, mesh7, mesh8;
+var angle = 0;
+var turn = false;
+var turn2 = false;
+init();
+animate();
+
+function Toggle() {
+    turn = !turn;
+}
+
+function init() {
+	closeSound = document.getElementById ('close');
+	openSound = document.getElementById ('open');
+    scene = new THREE.Scene();
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
+    camera.position.z = 500;
+    scene.add(camera);
+
+	var woodtex, bumpwoodtex;
+	woodtex = new THREE.ImageUtils.loadTexture( 'images/wood.jpg' );
+	bumpwoodtex = new THREE.ImageUtils.loadTexture( 'images/greywood.jpg' );
+    geometry = new THREE.BoxGeometry(80, 5, 5);
+	geometry2 = new THREE.BoxGeometry(5, 95, 5);
+	geometry3 = new THREE.BoxGeometry(70, 95, 2.5);
+	geometry4 = new THREE.SphereGeometry(3,30,30);
+	geometry5 = new THREE.CylinderGeometry(1, 1, 5, 30);
+	geometry6 = new THREE.CylinderGeometry(2, 2, 10, 30);
+    material = new THREE.MeshPhongMaterial({
+		map: woodtex,
+		bumpMap: bumpwoodtex,
+        bumpScale: 0.8,
+		side: THREE.DoubleSide
+    });
+	material2 = new THREE.MeshLambertMaterial;
+    mesh = new THREE.Mesh(geometry, material);
+	mesh2 = new THREE.Mesh(geometry, material);
+	mesh3 = new THREE.Mesh(geometry2, material);
+	mesh4 = new THREE.Mesh(geometry2, material);
+	mesh5 = new THREE.Mesh(geometry4, material2);
+	mesh6 = new THREE.Mesh(geometry5, material2);
+	mesh7 = new THREE.Mesh(geometry6, material2);
+	mesh8 = new THREE.Mesh(geometry6, material2);
+	meshdoor = new THREE.Mesh(geometry3, material);
+	meshdoor.position.set(-35, -27.5, -2);
+	
+	
+    scene.add(mesh);
+	scene.add(mesh2);
+	scene.add(mesh3);
+	scene.add(mesh4);
+	meshdoor.add(mesh5);
+	meshdoor.add(mesh6);
+	//scene.add(mesh5);
+	//scene.add(mesh6);
+	mesh7.add(meshdoor);
+	scene.add(mesh7);
+	scene.add(mesh8);
+	
+    light = new THREE.PointLight(0xffffff);
+    light.position.set(100, 300, 200);
+    scene.add(light);
+
+    var gridXZ = new THREE.GridHelper(100, 10);
+    gridXZ.setColors(new THREE.Color(0xff0000), new THREE.Color(0xffffff));
+    scene.add(gridXZ);
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x888888);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    document.body.appendChild(renderer.domElement);
+
+}
+
+function animate() {
+    if (turn){ 
+		angle += 0.015;
+		openSound.play();
+	}
+	if (turn2) 
+		angle -= 0.015;
+	if(angle >= 1.7){
+		turn = false;
+		turn2 = true;
+	}
+	if(angle<0){
+		turn = false;
+		turn2 = false;
+		closeSound.play();
+		angle = 0;
+	}
+	
+		
+	
+	mesh.position.set(40 , 2.5, -2.5);
+	mesh2.position.set(40 , 102.5, -2.5);
+	mesh3.position.set(2.5 , 52.5, -2.5);
+	mesh4.position.set(77.5 , 52.5, -2.5);
+	
+	
+	mesh5.position.set(-20, 0, 5);
+	mesh6.rotation.x =( Math.PI/2);
+	mesh6.position.set(-20 , 0,3);
+	mesh7.position.set(75 , 80, 0);
+	mesh8.position.set(75 , 30, 0);
+	mesh7.rotation.y =angle;
+	controls.update();
+    requestAnimationFrame(animate);
+    render();
+}
+
+function render() {
+    renderer.render(scene, camera);
+}
+
+
+
+</script>
+</body>
+
+</html>
