@@ -1,0 +1,500 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+	#info {
+    position: absolute;
+    top: 0px;
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    color: #ffff00
+}
+#speed {
+    position: absolute;
+    bottom: 100px;
+    width: 100%;
+    color: #ffff00;
+    text-align: center;
+}
+}
+</style>
+</head>
+
+<body>
+<div id="info">Segway kinematics
+    <br/>[W/S][I/K]</div>
+<div id="speed"></div>
+<div id="info">
+    
+	<br/><br/>
+	<a href="javascript:log();">toggle</a>
+</div>
+
+<script src="js/three.min.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/KeyboardState.js"></script>
+<script src="js/loaders/MTLLoader.js"></script>
+<script src="js/loaders/OBJMTLLoader.js"></script>
+<script src="js/loaders/OBJLoader.js"></script>
+<script type="x-shader/x-fragment" id="fragmentShaderDepth">
+    uniform sampler2D texture;
+    varying vec2 vUV;
+
+    vec4 pack_depth(const in float depth) {
+
+        const vec4 bit_shift = vec4(256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0);
+        const vec4 bit_mask = vec4(0.0, 1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0);
+        vec4 res = fract(depth * bit_shift);
+        res -= res.xxyz * bit_mask;
+        return res;
+
+    }
+
+    void main() {
+
+        vec4 pixel = texture2D(texture, vUV);
+
+        if (pixel.a < 0.5) discard;
+
+        gl_FragData[0] = pack_depth(gl_FragCoord.z);
+
+    }
+</script>
+<script type="x-shader/x-vertex" id="vertexShaderDepth">
+    varying vec2 vUV;
+
+    void main() {
+
+        vUV = 1.0 * uv;
+
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+        gl_Position = projectionMatrix * mvPosition;
+
+    }
+</script>
+<script>
+var camera, scene, renderer, geometry, material, light, controls;
+var clock = new THREE.Clock();
+var keyboard = new KeyboardState();
+var pos = new THREE.Vector3(0,0,0);
+var angle = 0, speed = 5;
+var rt, alpha, h, ly, lampgeometry, lampmaterial;
+////////////////////////////////////////////////////Segway kinematics
+var pa = new THREE.Vector3(0, 50, 80);
+var pb = new THREE.Vector3(0, 50, -80);
+//var pc = new THREE.Vector3(0,0,0);
+var sa = 2;
+var sb = 2;
+var pointA, pointB, car;
+var speedInfo;
+var k = 0;
+var xangle = 0;
+var zangle = 0;
+var BasicCriypticman;
+var toggle=0;
+init();
+animate();
+function log()
+{
+	toggle^=1;
+}
+function update(dt)
+{
+	controls.update();
+	/*keyboard.update();         
+	if ( keyboard.pressed("left") ) 
+		angle += 0.01;               
+	if ( keyboard.pressed("right") )
+		angle -= 0.01;               
+	if ( keyboard.pressed("up") )  
+		speed += 0.5;        
+	if ( keyboard.pressed("down") )  
+		speed -= 0.5;    
+
+	speed = myclamp (speed, 0.0, 20.0);	*/
+/////////////////////////////////////////////////////////
+	var center = new THREE.Vector3();
+    var tmp = new THREE.Vector3();
+    var l = tmp.subVectors(pa, pb).length();
+
+    k = l * sa / (sb - sa);
+    var omega = (sb - sa) / l;
+    //if (omega === 0.0) {
+    if (Math.abs(sa-sb) < 1e-5) {    // this gives better result (no jerk)
+    tmp.subVectors(pa, pb).normalize().cross(new THREE.Vector3(0, 1, 0)).multiplyScalar(sa * dt);
+        pa.add(tmp);
+        pb.add(tmp);
+        //tire2.position.copy(pa);
+        //tire.position.copy(pb);
+        return; // do a pure translation then return
+    }
+
+    tmp.subVectors(pa, pb).normalize().multiplyScalar(k);
+    center.copy(tmp.add(pa));
+
+    tmp.subVectors(pa, center)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), omega * dt)
+        .add(center);
+    pa.copy(tmp);
+
+    tmp.subVectors(pb, center)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), omega * dt)
+        .add(center);
+    pb.copy(tmp);
+
+    // normalize ...
+    //tmp.subVectors (pb,pa).normalize().multiplyScalar(l);
+    //pb.addVectors(tmp,pa);
+    
+    //tire2.position.copy(pa);
+    //tire.position.copy(pb);
+    //pointC.position.copy (center);	
+}
+function init() {
+	speedInfo = window.document.getElementById('speed');
+    scene = new THREE.Scene();
+	
+		camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
+		camera.position.z = 500;
+    scene.add(camera);
+	
+	// lamp parameters
+    ly = 650;
+    rt = 30;
+    h = 50;
+    alpha = Math.PI / 6;
+    var rb = rt + h * Math.tan(alpha);
+
+    lampgeometry = new THREE.CylinderGeometry(rt, rb, h, 20, 1, true);
+    lampmaterial = new THREE.MeshBasicMaterial({
+        side: THREE.DoubleSide,
+        wireframe: true,
+        color: 0xffff00
+    });
+    var lampmesh = new THREE.Mesh(lampgeometry, lampmaterial);
+    lampmesh.position.setY(-h / 2); // so that top face is on XZ plane
+
+    lamp = new THREE.Object3D();
+    lamp.add(lampmesh);
+    lamp.position.setY(ly);
+    scene.add(lamp);
+	
+    THREE.ImageUtils.crossOrigin = '';
+    var colormap = THREE.ImageUtils.loadTexture('images/tireside_noback5.png');
+    var colormap2 = THREE.ImageUtils.loadTexture('images/tire2.jpg');
+	var colormap3 = THREE.ImageUtils.loadTexture('images/iron.jpg');
+	var colormap4 = THREE.ImageUtils.loadTexture('images/wood.jpg');
+	
+    tire = new THREE.Object3D();
+    geometry = new THREE.CircleGeometry(50, 80);
+    material = new THREE.MeshLambertMaterial({
+        map: colormap,
+        transparent: true,  // for cut-out texture
+        side: THREE.DoubleSide
+    });
+    var mesh = new THREE.Mesh(geometry, material);
+	colormap2.wrapS = colormap2.wrapT = THREE.RepeatWrapping; 
+	colormap2.repeat.set( 8, 1 );
+    var mesh2 = new THREE.Mesh(new THREE.CylinderGeometry(50, 50, 20, 80, 1, true), // only side
+    new THREE.MeshLambertMaterial({
+        map: colormap2,
+        side: THREE.DoubleSide
+    }));
+    mesh2.rotation.x = Math.PI / 2;
+    mesh.position.set(0, 0, 10);
+    mesh0 = mesh.clone();
+    mesh0.position.set(0, 0, -10);
+    mesh0.rotation.y = Math.PI;
+    tire.add (mesh);
+    tire.add(mesh0);
+    tire.add(mesh2);
+    //scene.add(tire);
+	tire2 = new THREE.Object3D();
+	var tire2mesh = mesh.clone();
+	var tire2mesh0 = mesh0.clone();;
+	var tire2mesh2 = mesh2.clone();;
+	tire2.add (tire2mesh);
+    tire2.add(tire2mesh0);
+    tire2.add(tire2mesh2);
+	segway = new THREE.Object3D();
+	tire.position.set (0, 0, 80);
+	tire2.position.set (0, 0, -80);
+	segway.add(tire);
+	segway.add(tire2);
+	//scene.add(tire);
+	//scene.add(tire2);
+	var Pedalmesh = new THREE.Mesh(new THREE.BoxGeometry(80, 10, 135), // only side
+    new THREE.MeshLambertMaterial({
+		map: colormap3,
+        side: THREE.DoubleSide
+	}));
+	//segway.add(Pedalmesh);
+	
+	var Levermidmesh = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 140, 80, 1), // only side
+    new THREE.MeshLambertMaterial({
+		map: colormap4,
+        side: THREE.DoubleSide
+	}));
+	Levermidmesh.position.set (-15, 70, 0);
+	segway.add(Levermidmesh);
+	var Leverdownmesh = new THREE.Mesh(new THREE.SphereGeometry(15, 80, 80, 0, Math.PI * 2, 0, Math.PI / 2), // only side
+    new THREE.MeshLambertMaterial({
+		map: colormap4,
+        side: THREE.DoubleSide
+	}));
+	Leverdownmesh.position.set (-15, 0, 0);
+	//segway.add(Leverdownmesh);
+	var Levertopmesh = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 90, 80, 1), // only side
+    new THREE.MeshLambertMaterial({
+		map: colormap4,
+        side: THREE.DoubleSide
+	}));
+	Levertopmesh.position.set (-15, 140, 0);
+	Levertopmesh.rotation.x = Math.PI / 2;
+	segway.add(Levertopmesh);
+	Lever = new THREE.Object3D();
+	Lever2 = new THREE.Object3D();
+	Lever.add(Levertopmesh);
+	Lever.add(Levermidmesh);
+	Lever2.add(Pedalmesh);
+	Lever2.add(Leverdownmesh);
+	Lever2.add(Lever);
+	segway.add(Lever2);
+	scene.add(segway);
+	//scene.add(Pedalmesh);
+	//////////////////////////////////////////////////////////////// shadow
+
+    // spotlight
+    light = new THREE.SpotLight(0xffffff, 1.5);
+    light.position.set(0, ly, 0);
+    light.angle = alpha;
+    light.exponent = 30;
+    scene.add(light);
+    light.target = segway; // light follows the box
+    
+
+    //light = new THREE.PointLight(0xffffff);
+    //light.position.set(100, 300, 200);
+    //scene.add(light);
+	
+	/////////////////////////////////////////////////////////////////floor
+	var floorMaterial = new THREE.MeshLambertMaterial();
+	var floorGeometry = new THREE.PlaneGeometry(1000, 1000 ,30, 30);//, 10, 10);  // not clear what segment does
+	var floor = new THREE.Mesh(floorGeometry, floorMaterial);
+	floor.position.y = -0.5;
+	floor.rotation.x = -Math.PI / 2;
+	scene.add(floor);
+	
+	var uniforms = {
+        texture: {
+            type: "t",
+            value: colormap
+        }
+    };
+	
+    var vertexShader = document.getElementById('vertexShaderDepth').textContent;
+    var fragmentShader = document.getElementById('fragmentShaderDepth').textContent;
+    mesh.customDepthMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader
+    });
+	mesh0.customDepthMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader
+    });
+	tire2mesh.customDepthMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader
+    });
+	tire2mesh0.customDepthMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader
+    });
+    var gridXZ = new THREE.GridHelper(100, 10);
+    gridXZ.setColors(new THREE.Color(0xff0000), new THREE.Color(0xffffff));
+    //scene.add(gridXZ);
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x333333);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    document.body.appendChild(renderer.domElement);
+	// shadow map settings
+    light.castShadow = true;
+    light.shadowMapWidth = 1024;
+    light.shadowMapHeight = 1024;
+    light.shadowCameraNear = 5;
+    light.shadowCameraFar = 4000;
+    light.shadowCameraFov = light.angle/Math.PI*180;
+	
+	renderer.shadowMapEnabled = true;
+    renderer.shadowMapType = THREE.PCFShadowMap;
+
+	 /*var loader = new THREE.OBJMTLLoader();
+	loader.load ('model/BasicCriypticman.obj', 'model/BasicCriypticman.mtl', 
+    function (object) {
+	BasicCriypticman = object;
+		scene.add( BasicCriypticman );
+    } );*/
+	segway.add(BasicCriypticman);
+	//tire2.position.copy(pa);
+    //tire.position.copy(pb);
+	var amblight = new THREE.AmbientLight(0x888888);
+	scene.add(amblight);
+	
+    floor.receiveShadow = true;
+    mesh.castShadow = true;
+	mesh0.castShadow = true;
+	mesh2.castShadow = true;
+	Pedalmesh.castShadow = true;
+	tire2mesh.castShadow = true;
+	tire2mesh0.castShadow = true;
+	tire2mesh2.castShadow = true;
+	Levermidmesh.castShadow = true;
+	Leverdownmesh.castShadow = true;
+	Levertopmesh.castShadow = true;
+	
+	
+}
+
+function animate() {
+	//var dt = clock.getDelta();
+	//var dir = new THREE.Vector3(0,0,1);
+    
+	//dir.multiplyScalar (dt*speed).applyAxisAngle (new THREE.Vector3(0,1,0), angle);
+	//pos.add (dir);
+	
+	tire.rotation.z += sa/200;
+	tire2.rotation.z += sb/200;
+	
+	//segway.rotation.y = angle+Math.PI/2;	
+	//segway.position.set (pos.x, pos.y+50, pos.z);
+	keyboard.update();
+	
+	
+
+    if (keyboard.pressed("I")) sb += 0.1;
+    if (keyboard.pressed("K")) sb -= 0.1;
+    if (keyboard.pressed("W")) sa += 0.1;
+    if (keyboard.pressed("S")) sa -= 0.1;
+	if((sa-sb)<0){
+		xangle+=0.01;
+		xangle = myclamp(xangle, -0.1, 0.1);
+	}
+	else if(sa==sb){
+		if(xangle>0){
+			xangle-=0.01;
+			xangle = myclamp(xangle, 0, 0.1);
+		}
+		else if(xangle<0){
+			xangle+=0.01;
+			xangle = myclamp(xangle, 0, -0.1);
+		}
+		else
+			xangle=0;
+	}
+	else{
+		xangle-=0.01;
+		xangle = myclamp(xangle, -0.1, 0.1);
+	}
+    //zangle = myclamp(zangle, -0.2, 0.1);
+	
+	Lever.rotation.x = xangle;
+	if(sa>0 || sb>0){
+		zangle+=0.01;
+		zangle = myclamp(zangle, -0.1, 0.2);
+	}
+	else if(sa<0 || sb<0){
+		zangle-=0.01;
+		zangle = myclamp(zangle, -0.1, 0.2);
+	}
+	else
+		zangle=0;
+    Lever2.rotation.z = zangle;
+	
+    sa = myclamp(sa, -5, 5);
+    sb = myclamp(sb, -5, 5);
+
+    var text = 'sa: ' + sa.toFixed(2) + ', ' + 'sb: ' + sb.toFixed(2)
+    + '<br/>k: ' + k.toFixed(2);
+    
+    speedInfo.innerHTML = text;
+    // number format ?!
+
+    dt = 0.1;
+    update(0.1);
+
+    var tmp = new THREE.Vector3();
+    tmp.copy(pa);
+    tmp.add(pb).multiplyScalar(0.5); // (pa+pb)/2
+    segway.position.copy(tmp);
+    tmp.copy(pa);
+    tmp.sub(pb); // pa - pb;
+    var angle = Math.atan2(tmp.x, tmp.z);
+    //console.log(angle);
+    segway.setRotationFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+
+    /*if (BasicCriypticman != undefined) { 
+		BasicCriypticman.scale.set (30,30,30);
+		BasicCriypticman.position.set();
+		/*toycar.rotation.y = (angle+Math.PI/2);
+
+		var relativeCameraOffset = new THREE.Vector3 (0,150,-250);
+
+		var cameraOffset = relativeCameraOffset.applyMatrix4( toycar.matrixWorld );
+
+		camera.position.x = cameraOffset.x;
+		camera.position.y = cameraOffset.y;
+		camera.position.z = cameraOffset.z;
+		camera.lookAt( toycar.position );
+	}*/
+	// rotating lamp
+    var axis = new THREE.Vector3();
+    var d = new THREE.Vector3();
+    var p = new THREE.Vector3();
+    p = tire.position.clone().sub(new THREE.Vector3(0, ly, 0)).normalize();
+    d = new THREE.Vector3(0, -1, 0);
+    axis.crossVectors(d, p).normalize();
+    var rotangle = Math.acos(d.dot(p));
+	
+	if(toggle){
+	var relativeCameraOffset = new THREE.Vector3 (350,150,0);
+
+		var cameraOffset = relativeCameraOffset.applyMatrix4( segway.matrixWorld );
+
+		camera.position.x = cameraOffset.x;
+		camera.position.y = cameraOffset.y;
+		camera.position.z = cameraOffset.z;
+		camera.lookAt( segway.position );
+	}
+    // undocumented API
+    lamp.setRotationFromAxisAngle(axis, rotangle);
+	
+    requestAnimationFrame(animate);
+	//update();
+    render();
+}
+function myclamp(x, lo, hi)
+{
+	return (x < lo) ? lo : ((x > hi) ? hi : x);
+}
+
+function render() {
+    renderer.render(scene, camera);
+}
+
+
+
+</script>
+</body>
+
+</html>
