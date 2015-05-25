@@ -1,0 +1,374 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+	#info {
+    position: absolute;
+    top: 0px;
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    color: #ffff00
+}
+body {
+    overflow: hidden;
+}
+</style>
+</head>
+
+<body>
+<div id="info">Render to Texture
+    <br>(shader to cutout)
+    <br>with shadow</div>
+<script src="http://cdnjs.cloudflare.com/ajax/libs/three.js/r70/three.min.js"></script>
+<script src="https://dl.dropboxusercontent.com/u/3587259/Code/Threejs/OrbitControls.js"></script>
+
+<script id="myVertexShader" type="x-shader/x-vertex">
+    varying vec2 vUv;
+    void main() {
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vUv = uv;
+    }
+</script>
+<script id="myFragmentShader" type="x-shader/x-fragment">
+    uniform sampler2D texture;
+    varying vec2 vUv;
+
+    void main() {
+        vec4 color = texture2D(texture, vUv);
+        if (color.b > 0.85) discard;
+        else gl_FragColor = vec4(.2, .2, .2, 0.) + color;
+    }
+</script>
+<script type="x-shader/x-fragment" id="fragmentShaderDepth">
+    uniform sampler2D texture;
+    varying vec2 vUv;
+
+    vec4 pack_depth(const in float depth) {
+        const vec4 bit_shift = vec4(256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0);
+        const vec4 bit_mask = vec4(0.0, 1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0);
+        vec4 res = fract(depth * bit_shift);
+        res -= res.xxyz * bit_mask;
+        return res;
+    }
+
+    void main() {
+        vec4 pixel = texture2D(texture, vUv);
+        if (pixel.b > 0.85) discard;
+        gl_FragData[0] = pack_depth(gl_FragCoord.z);
+    }
+</script>
+<script>
+var camera, scene, renderer, light, controls;
+var sceneRTT, rtTexture, mesh1;
+var clock = new THREE.Clock();
+var angle = 0;
+
+init();
+animate();
+
+function init() {
+    sceneRTT = new THREE.Scene();
+    light = new THREE.PointLight(0xffffff);
+    light.position.set(0, 300, 200);
+    sceneRTT.add(light);
+
+    rtTexture = new THREE.WebGLRenderTarget(
+    window.innerWidth, window.innerHeight, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBFormat
+    });
+
+    var loader = new THREE.JSONLoader();
+	loader.load('models/METAL_SONIC.js', function (geometry, mat) {
+		geometry.computeMorphNormals();
+
+		var mat = new THREE.MeshBasicMaterial(
+				{			
+					map: THREE.ImageUtils.loadTexture("models/METAL_SONIC.png"),
+					morphTargets: true, morphNormals: true
+				});
+
+		mesh1 = new THREE.MorphAnimMesh(geometry, mat);
+
+
+		mesh1.rotation.y = 0.7;
+		mesh1.parseAnimations();
+
+		// parse the animations and add them to the control
+	
+		mesh1.playAnimation('jog0002', 2);
+		mesh1.scale.set(2, 2, 2);
+		sceneRTT.add(mesh1);
+	});
+    /*jsonLoader.load("http://jyunming-chen.github.io/tutsplus/models/teapot.json", function (geometry) {
+        teapot = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({
+            color: 0xff1234
+        }));
+        teapot.scale.set(32, 32, 32);
+        sceneRTT.add(teapot);
+    });*/
+
+    ///////////////////////////////////////////////////////////////////////////
+    scene = new THREE.Scene();
+    renderer = new THREE.WebGLRenderer({
+        antialias: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x888888);
+
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+    camera.position.y = 80;
+    camera.position.z = 400;
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    var ambientLight = new THREE.AmbientLight(0x555555);
+    scene.add(ambientLight);
+
+    document.body.appendChild(renderer.domElement);
+
+    //////////////////////////////////////////////////
+    var plane = new THREE.PlaneBufferGeometry(150, 150);
+    rttmaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: "t",
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('myFragmentShader').textContent
+    });
+    quad = new THREE.Mesh(plane, rttmaterial);
+    quad.position.set(0, 0, 0);
+    scene.add(quad);
+	quad2 = quad.clone();
+    quad2.position.set(30, 0, 0);
+    scene.add(quad2);
+	quad3 = quad.clone();
+    quad3.position.set(-30, 0, 0);
+    scene.add(quad3);
+	quad4 = quad.clone();
+    quad4.position.set(30, 0, 30);
+    scene.add(quad4);
+	quad5 = quad.clone();
+    quad5.position.set(30, 0, -30);
+    scene.add(quad5);
+	quad6 = quad.clone();
+    quad6.position.set(0, 0, 30);
+    scene.add(quad6);
+	quad7 = quad.clone();
+    quad7.position.set(0, 0, -30);
+    scene.add(quad7);
+	quad8 = quad.clone();
+    quad8.position.set(-30, 0, 30);
+    scene.add(quad8);
+	quad9 = quad.clone();
+    quad9.position.set(-30, 0, -30);
+    scene.add(quad9);
+    //////////////////////////////////////////////////////////////////////////
+    // shadowing ///////////////
+    renderer.shadowMapEnabled = true;
+    renderer.shadowMapType = THREE.PCFShadowMap;
+
+    quad.castShadow = true;
+    quad.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad2.castShadow = true;
+    quad2.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad3.castShadow = true;
+    quad3.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad4.castShadow = true;
+    quad4.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad5.castShadow = true;
+    quad5.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad6.castShadow = true;
+    quad6.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad7.castShadow = true;
+    quad7.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad8.castShadow = true;
+    quad8.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+	quad9.castShadow = true;
+    quad9.customDepthMaterial = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        uniforms: {
+            texture: {
+                type: 't',
+                value: rtTexture
+            }
+        },
+        vertexShader: document.getElementById('myVertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShaderDepth').textContent
+    });
+
+    spotLight = new THREE.SpotLight(0xffffff, 1);
+    spotLight.position.set(0, 300, 300);
+    spotLight.angle = Math.PI / 3;
+    spotLight.castShadow = true;
+    spotLight.shadowMapWidth = 1024;
+    spotLight.shadowMapHeight = 1024;
+    spotLight.shadowCameraNear = 5;
+    spotLight.shadowCameraFar = 4000;
+    spotLight.shadowCameraFov = spotLight.angle / Math.PI * 180;
+    spotLight.exponent = 20;
+    scene.add(spotLight);
+
+    var ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(400, 400, 130, 130),
+        new THREE.MeshLambertMaterial());
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    ground.receiveShadow = true;
+}
+
+function animate() {
+	requestAnimationFrame(animate);
+    controls.update();
+	
+    
+	rotateBillboard (quad);
+	rotateBillboard (quad2);
+	rotateBillboard (quad3);
+	rotateBillboard (quad4);
+	rotateBillboard (quad5);
+	rotateBillboard (quad6);
+	rotateBillboard (quad7);
+	rotateBillboard (quad8);
+	rotateBillboard (quad9);
+	
+
+    
+    render();
+}
+
+function render() {
+var delta = clock.getDelta();
+    // render teapot to texture
+    renderer.setClearColor(0x0000ff);
+    renderer.render(sceneRTT, camera, rtTexture, true);
+
+    // render texture to screne
+    renderer.setClearColor(0x888888);
+    renderer.render(scene, camera);
+	if (mesh1) {
+		// mesh.rotation.x+=0.006;
+		// mesh.rotation.y+=0.006;
+		//mesh.position.y = 25;
+		if (mesh1) {
+			mesh1.updateAnimation(delta*100);
+			// mesh.rotation.y+=0.01;
+		}
+	}
+	
+	
+}
+function rotateBillboard (mesh)
+{
+    var b = mesh.position.clone();  // billboard location
+    var rotaxis = new THREE.Vector3();
+    var v, yhat, n;
+    
+    v = camera.position.clone(); // clone the camera position
+    yhat = new THREE.Vector3(0, 1, 0); // up
+    n = new THREE.Vector3(0, 0, 1); // billboard normal
+
+    v.subVectors(v, b); // v-b
+    v.sub(yhat.clone().multiplyScalar(v.dot(yhat)));
+    v.normalize(); // pxz
+
+    rotangle = Math.acos(v.dot(n));
+    rotaxis.crossVectors(n, v);
+    if (rotaxis.dot(yhat) < 0) rotangle *= -1;
+
+    mesh.rotation.y = rotangle;
+}
+
+
+
+</script>
+</body>
+
+</html>
